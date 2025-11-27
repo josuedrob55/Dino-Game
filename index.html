@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Full Screen Runner Game</title>
+<style>
+    body {
+        margin: 0;
+        background: #f0f0f0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+    canvas {
+        background: #bde5f2;
+        border: 2px solid #333;
+        display: block;
+    }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Full-screen canvas size
+canvas.width = window.innerWidth - 20;
+canvas.height = window.innerHeight - 40;
+
+// Ground position
+const groundY = canvas.height - 80; // ground a bit higher from bottom
+
+// Player dimensions (scaled to image shape)
+let player = {
+    x: 100,
+    y: groundY - 200, // position above ground
+    width: 150,        // good size for visibility & fairness
+    height: 200,       // taller than width due to running pose
+    yVelocity: 0,
+    jumping: false
+};
+
+// Load custom player image
+const playerImg = new Image();
+playerImg.src = "runner.png"; // match your actual file name exactly
+
+// Obstacles
+let obstacles = [];
+let obstacleSpeed = 10;
+const gravity = 2;    // slightly stronger gravity for feel
+const jumpStrength = -32; // high enough jump to clear tall obstacles
+const minGap = 600;   // minimum distance between obstacles
+
+// Score tracking
+let score = 0;
+let highScore = localStorage.getItem("highScore") || 0;
+
+// Clouds
+let clouds = [
+    {x: 200, y: 100, width: 200, height: 60},
+    {x: 800, y: 200, width: 250, height: 80}
+];
+
+// Background state
+let backgroundColor = "#bde5f2";
+
+// Game states
+let gameRunning = false;
+let gameOver = false;
+
+// Controls
+document.addEventListener("keydown", e => {
+    if (e.code === "Space") {
+        if (!gameRunning) startGame();
+        else if (!player.jumping && !gameOver) jump();
+        else if (gameOver) startGame();
+    }
+});
+
+document.addEventListener("touchstart", () => {
+    if (!gameRunning) startGame();
+    else if (!player.jumping && !gameOver) jump();
+    else if (gameOver) startGame();
+});
+
+// Jump function
+function jump() {
+    player.jumping = true;
+    player.yVelocity = jumpStrength;
+}
+
+// Start game
+function startGame() {
+    gameRunning = true;
+    gameOver = false;
+    score = 0;
+    obstacleSpeed = 10;
+    player.y = groundY - player.height;
+    player.yVelocity = 0;
+    player.jumping = false;
+    obstacles = [];
+    spawnObstacle();
+}
+
+// Spawn obstacle
+function spawnObstacle() {
+    let rightmostX = 0;
+    if (obstacles.length > 0) {
+        rightmostX = Math.max(...obstacles.map(obs => obs.x));
+    }
+    if (rightmostX === 0 || canvas.width - rightmostX > minGap) {
+        const heightOptions = [120, 160]; // fair heights
+        const h = heightOptions[Math.floor(Math.random() * heightOptions.length)];
+        obstacles.push({
+            x: canvas.width,
+            y: groundY - h,
+            width: 25, // THIN for fairness
+            height: h
+        });
+    }
+}
+
+// Update game state
+function update() {
+    if (!gameRunning || gameOver) return;
+
+    // Player physics
+    player.y += player.yVelocity;
+    player.yVelocity += gravity;
+    if (player.y >= groundY - player.height) {
+        player.y = groundY - player.height;
+        player.jumping = false;
+    }
+
+    // Obstacles movement & collision
+    for (let obs of obstacles) {
+        obs.x -= obstacleSpeed;
+        if (
+            player.x < obs.x + obs.width &&
+            player.x + player.width > obs.x &&
+            player.y < obs.y + obs.height &&
+            player.y + player.height > obs.y
+        ) {
+            gameOver = true;
+            gameRunning = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem("highScore", highScore);
+            }
+        }
+    }
+
+    // Remove passed obstacles
+    obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+
+    // Spawn new obstacles
+    if (Math.random() < 0.02) spawnObstacle();
+
+    // Increase difficulty
+    if (Math.floor(score) % 15 === 0 && obstacleSpeed < 20) {
+        obstacleSpeed += 0.01;
+    }
+
+    // Score increment
+    score += 0.05;
+
+    // Move clouds
+    for (let cloud of clouds) {
+        cloud.x -= 1;
+        if (cloud.x + cloud.width < 0) {
+            cloud.x = canvas.width + Math.random() * 400;
+            cloud.y = 50 + Math.random() * 200;
+        }
+    }
+
+    // Day/night toggle
+    backgroundColor = Math.floor(score) % 300 < 150 ? "#bde5f2" : "#023047";
+}
+
+// Draw everything
+function draw() {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Ground
+    ctx.fillStyle = "#8d99ae";
+    ctx.fillRect(0, groundY, canvas.width, 10);
+
+    // Clouds
+    ctx.fillStyle = "#fff";
+    for (let cloud of clouds) {
+        ctx.fillRect(cloud.x, cloud.y, cloud.width, cloud.height);
+    }
+
+    // Player image or fallback
+    if (playerImg.complete && playerImg.naturalWidth > 0) {
+        ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+    } else {
+        ctx.fillStyle = "#4CAF50";
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+    }
+
+    // Obstacles
+    ctx.fillStyle = "#8B4513";
+    for (let obs of obstacles) {
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+    }
+
+    // Score display
+    ctx.fillStyle = "#fff";
+    ctx.font = "28px Arial";
+    ctx.fillText("Score: " + Math.floor(score), 20, 40);
+    ctx.fillText("High Score: " + highScore, 20, 80);
+
+    // Start message
+    if (!gameRunning && !gameOver && score === 0) {
+        ctx.fillStyle = "#000";
+        ctx.font = "38px Arial";
+        ctx.fillText("Press SPACE or Tap to Start", canvas.width/2 - 250, canvas.height/2);
+    }
+
+    // Game over screen
+    if (gameOver) {
+        ctx.fillStyle = "red";
+        ctx.font = "50px Arial";
+        ctx.fillText("GAME OVER", canvas.width/2 - 150, canvas.height/2);
+        ctx.font = "26px Arial";
+        ctx.fillText("Press SPACE or Tap to Restart", canvas.width/2 - 200, canvas.height/2 + 50);
+    }
+}
+
+// Main loop
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+
+// Resize handler
+window.addEventListener("resize", () => {
+    canvas.width = window.innerWidth - 20;
+    canvas.height = window.innerHeight - 40;
+});
+</script>
+</body>
+</html>
